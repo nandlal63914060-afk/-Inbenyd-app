@@ -1,0 +1,218 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'dart:async';
+import 'firebase_options.dart'; // flutterfire configure se banta hai
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  runApp(const InbenydApp());
+}
+
+class InbenydApp extends StatelessWidget {
+  const InbenydApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Inbenyd',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF0D0E15),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFFFF007F),
+          secondary: Color(0xFF7000FF),
+          surface: Color(0xFF1E1F29),
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Color(0xFF1E1F29),
+          selectedItemColor: Color(0xFFFF007F),
+          unselectedItemColor: Colors.grey,
+        ),
+      ),
+      home: const MainNavigationScreen(),
+    );
+  }
+}
+
+class MainNavigationScreen extends StatefulWidget {
+  const MainNavigationScreen({super.key});
+  @override
+  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+}
+
+class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  int _selectedIndex = 0;
+  final List<Widget> _screens = const [
+    InbenydFeedScreen(),
+    InbenydAiStudioScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _screens[_selectedIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Feed'),
+          BottomNavigationBarItem(icon: Icon(Icons.psychology), label: 'AI Studio'),
+        ],
+      ),
+    );
+  }
+}
+
+// --- INSTAGRAM + YOUTUBE HYBRID FEED - REAL FIREBASE ---
+class InbenydFeedScreen extends StatelessWidget {
+  const InbenydFeedScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('INBENYD', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Color(0xFFFF007F))),
+        backgroundColor: Colors.transparent, elevation: 0,
+        actions: [IconButton(icon: const Icon(Icons.live_tv, color: Color(0xFF7000FF)), onPressed: () {})],
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('posts').orderBy('timestamp', descending: true).snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFFFF007F)));
+          
+          var docs = snapshot.data!.docs;
+          // Agar data nahi hai to 5 demo dikhao
+          if (docs.isEmpty) docs = [];
+
+          return ListView.builder(
+            itemCount: docs.isEmpty ? 5 : docs.length,
+            itemBuilder: (context, index) {
+              final data = docs.isEmpty ? null : docs[index].data() as Map<String, dynamic>;
+              
+              return Container(
+                margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(16)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      leading: const CircleAvatar(backgroundColor: Color(0xFFFF007F), child: Icon(Icons.person, color: Colors.white)),
+                      title: Text(data?['creatorId'] ?? 'Creator ${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(data?['caption'] ?? 'Trending Video - ${data?['mediaType'] ?? 'video'}'),
+                    ),
+                    Container(
+                      height: 280, width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        image: data?['mediaUrl'] != null 
+                        ? DecorationImage(image: NetworkImage(data!['mediaUrl']), fit: BoxFit.cover)
+                        : null,
+                        gradient: data?['mediaUrl'] == null ? const LinearGradient(colors: [Color(0xFF7000FF), Color(0xFFFF007F)]) : null,
+                      ),
+                      child: data?['mediaUrl'] == null ? const Center(child: Icon(Icons.play_circle_fill, size: 64, color: Colors.white70)) : null,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Row(
+                        children: [
+                          IconButton(icon: const Icon(Icons.favorite_border, color: Color(0xFFFF007F)), onPressed: () {
+                            if(data != null) {
+                              FirebaseFirestore.instance.collection('posts').doc(docs[index].id).update({
+                                'likes': FieldValue.arrayUnion(['demo_user'])
+                              });
+                            }
+                          }),
+                          Text("${(data?['likes'] as List?)?.length ?? 0} likes"),
+                          const Spacer(),
+                          IconButton(icon: const Icon(Icons.bookmark_border), onPressed: () {}),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// --- AI STUDIO ---
+class InbenydAiStudioScreen extends StatefulWidget {
+  const InbenydAiStudioScreen({super.key});
+  @override
+  State<InbenydAiStudioScreen> createState() => _InbenydAiStudioScreenState();
+}
+
+class _InbenydAiStudioScreenState extends State<InbenydAiStudioScreen> {
+  final TextEditingController _promptController = TextEditingController();
+  bool _isGenerating = false;
+  String _generatedStatus = "";
+
+  void _generateMedia(String type) {
+    if (_promptController.text.trim().isEmpty) return;
+    setState(() {
+      _isGenerating = true;
+      _generatedStatus = "AI is crafting your custom $type...";
+    });
+    Timer(const Duration(seconds: 4), () async {
+      // Firebase me save karo
+      await FirebaseFirestore.instance.collection('posts').add({
+        'creatorId': 'ai_user',
+        'mediaUrl': 'https://picsum.photos/500/500?random=${DateTime.now().millisecond}',
+        'mediaType': type,
+        'caption': _promptController.text,
+        'likes': [],
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+      setState(() {
+        _isGenerating = false;
+        _generatedStatus = "Successfully generated! Uploaded to Inbenyd Feed.";
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Icon(Icons.auto_awesome, size: 80, color: Color(0xFFFF007F)),
+            const SizedBox(height: 16),
+            const Text('Inbenyd AI Engine', textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 32),
+            TextField(
+              controller: _promptController,
+              decoration: InputDecoration(
+                filled: true, fillColor: Theme.of(context).colorScheme.surface,
+                hintText: 'e.g., A cyberpunk cat streaming on mars...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(child: ElevatedButton.icon(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7000FF), padding: const EdgeInsets.symmetric(vertical: 16)), icon: const Icon(Icons.image), label: const Text('Create Image'), onPressed: _isGenerating ? null : () => _generateMedia('image'))),
+                const SizedBox(width: 12),
+                Expanded(child: ElevatedButton.icon(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF007F), padding: const EdgeInsets.symmetric(vertical: 16)), icon: const Icon(Icons.videocam), label: const Text('Create Video'), onPressed: _isGenerating ? null : () => _generateMedia('video'))),
+              ],
+            ),
+            const SizedBox(height: 30),
+            if (_isGenerating) const Center(child: CircularProgressIndicator(color: Color(0xFFFF007F))),
+            if (_generatedStatus.isNotEmpty) Text(_generatedStatus, textAlign: TextAlign.center, style: const TextStyle(color: Colors.lightGreenAccent)),
+          ],
+        ),
+      ),
+    );
+  }
+}
